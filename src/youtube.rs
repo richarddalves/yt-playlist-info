@@ -1,6 +1,6 @@
 // src/youtube.rs
 
-use crate::models::Video;
+use crate::models::{Playlist, Video};
 use iso8601_duration::Duration;
 use reqwest::Response;
 use serde_json::{Value, to_string};
@@ -77,36 +77,50 @@ pub fn fetch_video_ids(playlist_id: &str, api_token: &str) -> Vec<String> {
     videos_ids
 }
 
-pub fn fetch_video_details(video_id: &str, api_token: &str) -> Video {
-    let url = format!(
-        "https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id={video_id}&key={api_token}"
-    );
+pub fn fetch_video_details(videos_ids: &[String], playlist: &mut Playlist, api_token: &str) {
+    for chunk in videos_ids.chunks(50) {
+        let ids_str = chunk.join(",");
+        let mut url = format!(
+            "https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id={ids_str}&key={api_token}"
+        );
 
-    let response = reqwest::blocking::get(url).expect("Erro ao fazer terceiro request");
+        let response = reqwest::blocking::get(url).expect("Erro ao fazer terceiro request");
 
-    let body = response
-        .text()
-        .expect("Erro ao ler body do terceiro request");
+        let body = response
+            .text()
+            .expect("Erro ao ler body do terceiro request");
 
-    let mut json: Value = serde_json::from_str(&body).expect("Erro ao transformar body em json");
+        let mut json: Value =
+            serde_json::from_str(&body).expect("Erro ao transformar body em json");
 
-    let title = json["items"][0]["snippet"]["title"]
-        .as_str()
-        .expect("Erro ao extrair título do vídeo");
+        let items = json["items"].as_array().expect("\"items\" em `fetch_video_details` não é array");
 
-    let duration = json["items"][0]["contentDetails"]["duration"]
-        .as_str()
-        .expect("Não foi possível extrair duração do vídeo");
+        for item in items {
+            let video_id = item["id"]
+                .as_str()
+                .expect("Erro ao extrair id do vídeo");
 
-    let duration_seconds = iso8601_duration::Duration::parse(duration)
-        .expect("Não foi possível converter duração")
-        .num_seconds()
-        .expect("Não foi possível converter duração do vídeo em segundos")
-        as u64;
+            let title = item["snippet"]["title"]
+                .as_str()
+                .expect("Erro ao extrair título do vídeo");
 
-    Video {
-        id: video_id.to_string(),
-        title: title.to_string(),
-        duration_seconds,
+            let duration = item["contentDetails"]["duration"]
+                .as_str()
+                .expect("Não foi possível extrair duração do vídeo");
+
+            let duration_seconds = iso8601_duration::Duration::parse(duration)
+                .expect("Não foi possível converter duração")
+                .num_seconds()
+                .expect("Não foi possível converter duração do vídeo em segundos")
+                as u64;
+
+            let video = Video {
+                id: video_id.to_string(),
+                title: title.to_string(),
+                duration_seconds,
+            };
+
+            playlist.add_video(video);
+        }
     }
 }

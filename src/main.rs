@@ -8,12 +8,15 @@ mod youtube;
 use models::{Playlist, Video};
 
 use std::io::{self, Write};
+use std::time::Instant;
 
 fn main() {
     let api_token = dotenvy::var("YTB_API_TOKEN")
         .expect("A variável de ambiente `YTB_API_TOKEN` não foi encontrada.");
 
     let playlist_id = ask_for_playlist_id("Insira o ID da Playlist: ");
+
+    let start_time = Instant::now();
 
     // Passo 1: request para /playlist para obter nome da playlist e quantidade de vídeos
     let (playlist_title, videos_count) = youtube::fetch_playlist_metadata(&playlist_id, &api_token);
@@ -26,10 +29,8 @@ fn main() {
     // obs.: está ineficiente, estou fazendo um requet novo para cada video.
     // se a playlist tiver 1000 videos, serão 1000 requisições. a api suporta mais
     // do que um videoId por request, mas tratarei depois
-    for id in videos_ids {
-        let video = youtube::fetch_video_details(&id, &api_token);
-        playlist.add_video(video);
-    }
+
+    youtube::fetch_video_details(&videos_ids, &mut playlist, &api_token);
 
     // agora basta somar o tempo total de cada video e exibir
     let mut sum_duration = 0;
@@ -39,6 +40,9 @@ fn main() {
     }
 
     let duration_string = format_duration(sum_duration);
+    let end_time = start_time.elapsed();
+
+    println!("Resultados encontrados em {:.3?}\n", end_time);
 
     println!("Nome: {}", &playlist.title);
     println!("Quantidade de videos: {}", &playlist.videos_count);
@@ -47,8 +51,10 @@ fn main() {
     println!();
 
     for (i, video) in playlist.videos.iter().enumerate() {
-        println!("{}) {}", i+1, video.title);
+        println!("{}) {}", i + 1, video.title);
     }
+
+    println!("\nTempo total: {:.3?}", start_time.elapsed());
 }
 
 fn ask_for_playlist_id(msg: &str) -> String {
